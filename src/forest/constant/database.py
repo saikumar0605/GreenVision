@@ -1,2 +1,2 @@
-DATABASE_NAME = "ineuron"
+DATABASE_NAME = "pwskills"
 COLLECTION_NAME = "forest"

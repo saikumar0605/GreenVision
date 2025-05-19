@@ -27,11 +27,11 @@ class SimpleStorageService:
                 return False
         except Exception as e:
             raise ForestException(e,sys)
-        
-        
+
+
 
     @staticmethod
-    def read_object(object_name: str, decode: bool = True, make_readable: bool = False) -> Union[StringIO, str]:
+    def read_object(object_name: object, decode: bool = True, make_readable: bool = False) -> Union[StringIO, str]:
         """
         Method Name :   read_object
         Description :   This method reads the object_name object with kwargs
@@ -45,16 +45,43 @@ class SimpleStorageService:
         logging.info("Entered the read_object method of S3Operations class")
 
         try:
-            func = (
-                lambda: object_name.get()["Body"].read().decode()
-                if decode is True
-                else object_name.get()["Body"].read()
-            )
-            conv_func = lambda: StringIO(func()) if make_readable is True else func()
+            # Check if object_name is None
+            if object_name is None:
+                raise ForestException("Object is None. Cannot read from None object.", sys)
+
+            # Check if object_name is a list (multiple objects found)
+            if isinstance(object_name, list):
+                # Use the first object in the list if it's not empty
+                if len(object_name) > 0:
+                    object_name = object_name[0]
+                else:
+                    raise ForestException("Empty list of objects provided", sys)
+
+            # Check if object has get method
+            if not hasattr(object_name, 'get'):
+                raise ForestException(f"Object of type {type(object_name)} does not have 'get' method", sys)
+
+            # Get the object content
+            response = object_name.get()
+            if not response or 'Body' not in response:
+                raise ForestException("Invalid response from S3 object get() method", sys)
+
+            # Read the content
+            body = response["Body"]
+            content = body.read()
+
+            # Process the content based on parameters
+            if decode:
+                content = content.decode()
+
+            if make_readable:
+                content = StringIO(content)
+
             logging.info("Exited the read_object method of S3Operations class")
-            return conv_func()
+            return content
 
         except Exception as e:
+            logging.error(f"Error in read_object: {str(e)}")
             raise ForestException(e, sys) from e
 
     def get_bucket(self, bucket_name: str) -> Bucket:
@@ -88,21 +115,32 @@ class SimpleStorageService:
         Version     :   1.2
         Revisions   :   moved setup to cloud
         """
-        logging.info("Entered the get_file_object method of S3Operations class")
+        logging.info(f"Entered the get_file_object method of S3Operations class for file: {filename} in bucket: {bucket_name}")
 
         try:
             bucket = self.get_bucket(bucket_name)
 
-            file_objects = [file_object for file_object in bucket.objects.filter(Prefix=filename)]
+            # Check if bucket exists
+            if bucket is None:
+                raise ForestException(f"Bucket {bucket_name} not found", sys)
 
-            func = lambda x: x[0] if len(x) == 1 else x
+            # Get objects with the given prefix
+            file_objects = list(bucket.objects.filter(Prefix=filename))
 
-            file_objs = func(file_objects)
+            # Check if any objects were found
+            if len(file_objects) == 0:
+                logging.warning(f"No objects found with prefix {filename} in bucket {bucket_name}")
+                raise ForestException(f"No objects found with prefix {filename} in bucket {bucket_name}", sys)
+
+            # Return single object if only one found, otherwise return the list
+            file_objs = file_objects[0] if len(file_objects) == 1 else file_objects
+            logging.info(f"Found {len(file_objects)} objects with prefix {filename}")
             logging.info("Exited the get_file_object method of S3Operations class")
 
             return file_objs
 
         except Exception as e:
+            logging.error(f"Error in get_file_object: {str(e)}")
             raise ForestException(e, sys) from e
 
     def load_model(self, model_name: str, bucket_name: str, model_dir: str = None) -> object:
